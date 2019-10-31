@@ -48,7 +48,7 @@ def calcular_nni(individual, area):
 def ejecutar_ga(q_puntos, tam_poblacion, mapa, area, cxpb, mutpb, ngen):
     # Creo los tipos
     creator.create("FitnessMax", base.Fitness, weights=(1.0, ))
-    creator.create("Individual", list, fitness=creator.FitnessMax)
+    creator.create("Individual", Point, fitness=creator.FitnessMax)
 
     # Inicializo
     toolbox = base.Toolbox()
