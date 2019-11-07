@@ -13,11 +13,12 @@ barrios_caba['area'] = np.around(barrios_caba['area'].astype(float) / 10 ** 6, d
 area = barrios_caba['area'].sum()
 # obtengo los mínimos y máximos de los ejes X e Y del mapa "geodf"
 x_min, y_min, x_max, y_max = barrios_caba.total_bounds
-cxpb = 0.5
+cxpb = 0.2
 # mutpb = The probability of mutating an individual.
 mutpb = 0.2
 # ngen = número de generaciones
-ngen = 20
+ngen = 10
+
 
 def check_limite(mapa):
     def decorator(func):
@@ -27,9 +28,9 @@ def check_limite(mapa):
                 for coord in ind:
                     point = Point(coord[0], coord[1])
                     flg_contains = mapa.geometry.contains(point)
-                    # Si el punto está dentro del mapa que devuelva el punto.
+                    # Si el punto no está dentro del mapa invalide el fitness.
                     if not flg_contains.any():
-                        ind.fitness.values = (0,)
+                        del coord
             return offspring
         return wrapper
     return decorator
@@ -65,12 +66,13 @@ creator.create("FitnessMax", base.Fitness, weights=(1.0,))
 creator.create("Individual", list, fitness=creator.FitnessMax)
 
 IND_SIZE = 50
+POB_SIZE = 5
 
 toolbox = base.Toolbox()
 toolbox.register("coordenada", crear_punto_aleatorio, geo_df=barrios_caba, x_min=x_min, x_max=x_max, y_min=y_min,
                  y_max=y_max)
 toolbox.register("individuo", tools.initRepeat, creator.Individual, toolbox.coordenada, n=IND_SIZE)
-toolbox.register("poblacion", tools.initRepeat, list, toolbox.individuo, 50)
+toolbox.register("poblacion", tools.initRepeat, list, toolbox.individuo, POB_SIZE)
 
 toolbox.register("mate", tools.cxOnePoint)
 toolbox.register("mutate", tools.mutGaussian,  mu=0, sigma=1, indpb=0.1)
@@ -80,10 +82,8 @@ toolbox.register("evaluate", calcular_nni, area=area)
 toolbox.decorate("mate", check_limite(mapa=barrios_caba))
 toolbox.decorate("mutate", check_limite(mapa=barrios_caba))
 
-
-
 pop = toolbox.poblacion()
-# hof = tools.HallOfFame(5)
+hof = tools.HallOfFame(1)
 
 stats = tools.Statistics(lambda ind: ind.fitness.values)
 stats.register("max", np.max)
@@ -91,15 +91,25 @@ stats.register("avg", np.mean)
 stats.register("std", np.std)
 stats.register("min", np.min)
 
-pop, logbook = algorithms.eaSimple(pop, toolbox, cxpb=cxpb, mutpb=mutpb, ngen=ngen, stats=stats,  # halloffame=hof,
-                                   verbose=True)
+pop, logbook, best = algorithms.eaSimple(pop, toolbox, cxpb=cxpb, mutpb=mutpb, ngen=ngen, stats=stats, halloffame=hof,
+                                         verbose=True)
 
 
 print('POBLACIÓN FINAL')
-print(pop)
-# TODO: esto es para dibujar las coordenadas en el mapa. por ahora no es importante.
-#fig, ax = plt.subplots(figsize=(15, 15))
-#barrios_caba.plot(ax=ax)
+puntos_geo = []
+individuo = []
+for ind in best.items:
+    for coord in ind:
+        punto = Point(coord[0], coord[1])
+        puntos_geo.append(punto)
+    individuo.append(puntos_geo)
+    puntos_geo = []
+
+fig, ax = plt.subplots(figsize=(15, 15))
+barrios_caba.plot(ax=ax)
+serie = gpd.GeoSeries(individuo[0])
+serie.plot(ax=ax, color='green', marker='+', label='aleatorio')
+plt.show()
 #ind1.plot(ax=ax, color='green', marker='+', label='aleatorio')
 #plt.legend(prop={'size': 15})
 #plt.show()
