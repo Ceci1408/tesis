@@ -61,8 +61,7 @@ class Poblacion:
             ind.crear_coordenadas(q_coordenadas)
             ind.calcular_nni()
             individuos.append(ind)
-
-        self.individuos = gpd.GeoSeries(individuos)
+        self.individuos = pd.Series(individuos)
 
 
 class AlgoritmoGenetico:
@@ -78,16 +77,13 @@ class AlgoritmoGenetico:
         self.poblacion = None
 
     def inicio_ga(self):
-        self.poblacion = Poblacion(self.q_individuos, self.q_coordenadas)
-        self.poblacion.crear_individuos()
+        self.poblacion = Poblacion()
+        self.poblacion.crear_individuos(self.q_individuos, self.q_coordenadas)
 
     def seleccion_ruleta(self):
-        for ind in self.poblacion.individuos:
-            print(type(ind))
+        copy_ind = copy.deepcopy(self.poblacion.individuos)
+        print(copy_ind)
 
-
-pob = Poblacion()
-pob.crear_individuos(10, 50)
-for ind in pob.individuos:
-    print('Individuo 1')
-    print(ind)
+ga = AlgoritmoGenetico()
+ga.inicio_ga()
+ga.seleccion_ruleta()
