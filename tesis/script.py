@@ -7,7 +7,6 @@ import numpy as np
 from shapely.geometry import Point
 import random
 from operator import attrgetter
-from collections import Sequence
 from itertools import repeat
 
 barrios_caba = gpd.read_file(r'/home/cecilia/Dropbox/Tesis/Puntos Verdes/barrios.csv')
@@ -75,15 +74,101 @@ class AlgoritmoGenetico:
         self.mu = 0
         self.sigma = 1
         self.poblacion = None
+        self.tipo_modelo = 'e'
+        self.k_seleccion = 0
 
-    def inicio_ga(self):
+    def inicio_ga(self, tipo_modelo):
         self.poblacion = Poblacion()
         self.poblacion.crear_individuos(self.q_individuos, self.q_coordenadas)
 
-    def seleccion_ruleta(self):
+        if tipo_modelo == 'g':
+            copia = self.seleccion_generacional()
+
+        else:
+            #for gen in range(0, self.nro_generaciones):
+            self.k_seleccion = int(len(self.poblacion.individuos)/2)
+            # estacionario con, por ahora, selección ruleta
+            offspring = self.seleccion_ruleta(self.k_seleccion)
+
+            for i in range(1, len(offspring), 2):
+                if np.random.random() < self.prob_cruza:
+                    offspring[i-1], offspring[i] = self.cruzamiento(offspring[i-1], offspring[i])
+
+            for i in range(len(offspring)):
+                if np.random.random() < self.prob_mut:
+                    offspring[i] = self.mutacion(offspring[i], self.mu, self.sigma, self.prob_mut_alelo)
+
+            for ind in offspring:
+                ind.calcular_nni()
+                print(ind.fitness)
+            #return
+
+
+    # modelo generacional.
+    def seleccion_generacional(self):
         copy_ind = copy.deepcopy(self.poblacion.individuos)
-        print(copy_ind)
+        return copy_ind
+
+    # modelo estacionario
+    def seleccion_ruleta(self, k):
+        copy_ind = copy.deepcopy(self.poblacion.individuos)
+        sum_fit = sum(getattr(ind, 'fitness') for ind in copy_ind)
+
+        chosen = []
+        for i in range(k):
+            u = np.random.random() * sum_fit
+            sum_ = 0
+            for ind in copy_ind:
+                sum_ += getattr(ind, 'fitness')
+                if sum_> u:
+                    chosen.append(ind)
+                    break
+        return chosen
+
+    # http: // sedici.unlp.edu.ar / bitstream / handle / 10915 / 4060 / III_ - _Algoritmos_evolutivos.pdf?sequence = 7 & isAllowed = y
+    def selRandom(self, individuos, k):
+        return [random.choice(individuos) for i in range(k)]
+
+    def seleccion_torneo(self, tam_torneo):
+        copy_ind = copy.deepcopy(self.poblacion.individuos)
+        chosen = []
+        for i in range(len(copy_ind)):
+            aspirants = self.selRandom(copy_ind, tam_torneo)
+            chosen.append(max(aspirants, key=attrgetter('fitness')))
+        return chosen
+
+    def cruzamiento(self, ind1, ind2):
+        tam = min(len(ind1.coordenadas), len(ind2.coordenadas))
+        pto_cruce = np.random.randint(1, tam-1)
+
+        ind1_copia = copy.deepcopy(ind1)
+        ind1.coordenadas[pto_cruce:], ind2.coordenadas[pto_cruce:] = ind2.coordenadas[pto_cruce:], \
+                                                                     ind1_copia.coordenadas[pto_cruce:]
+
+        del ind1_copia
+        return ind1, ind2
+
+    def mutacion(self, ind1, mu, sigma, prob):
+        '''Prob: probabilidad de que cada coordenada sea mutada.
+        Se aplica la mutación con distribución de Gauss de media mu y una desv.
+        estándar de sigma como input del individuo'''
+
+        # repito mu tantas coordenadas tenga el individuo
+        mu = repeat(mu, len(ind1.coordenadas))
+        # repito sigma tantas coordenadas tenga el individuo
+        sigma = repeat(sigma, len(ind1.coordenadas))
+
+        for i, m, s in zip(range(len(ind1.coordenadas)), mu, sigma):
+            if random.random() < prob:
+                while True:
+                    punto_mutado = Point(ind1.coordenadas[i].x + random.gauss(m, s),
+                                         ind1.coordenadas[i].y + random.gauss(m, s))
+
+                    if ind1.validar_coordenada(punto_mutado):
+                        ind1.coordenadas = ind1.coordenadas.drop([i])
+                        ind1.coordenadas.loc[i] = punto_mutado
+                        break
+        return ind1
 
 ga = AlgoritmoGenetico()
-ga.inicio_ga()
-ga.seleccion_ruleta()
+ga.inicio_ga('e')
