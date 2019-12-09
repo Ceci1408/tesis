@@ -15,52 +15,41 @@ barrios_caba['area'] = np.around(barrios_caba['area'].astype(float) / 10 ** 6, d
 area = barrios_caba['area'].sum()
 
 
-class Individuo:
-    # un arreglo de 1 eje, con forma (1, 50) una fila, 50 columnas
-    def __init__(self):
-        self.coordenadas = None
-        self.fitness = 0
-
-    def validar_coordenada(self, punto):
-        return barrios_caba.contains(punto).any()
-
-    def crear_coordenadas(self, q_coordenadas):
-        puntos = []
-        for i in range(0, q_coordenadas):
-            x_min, y_min, x_max, y_max = barrios_caba.total_bounds
-            while True:
-                x = np.random.uniform(x_min, x_max)
-                y = np.random.uniform(y_min, y_max)
-                point = Point(x, y)
-                if self.validar_coordenada(point):
-                    puntos.append(point)
-                    break
-        self.coordenadas = gpd.GeoSeries(puntos)
-
-    def calcular_nni(self):
-        coord_radianes = copy.deepcopy(self.coordenadas)
-        coord_radianes = coord_radianes.apply(lambda c: (np.radians(c.x), np.radians(c.y)))
-        nbrs = NearestNeighbors(n_neighbors=2, metric='haversine').fit(coord_radianes.tolist())
-        distances, indices = nbrs.kneighbors(coord_radianes.tolist())
-        distances = distances * 6371000 / 1000
-        result = distances[:, 1]
-        dobs = np.sum(result) / len(coord_radianes.tolist())
-        rn = dobs / (0.5 * np.sqrt((area / len(coord_radianes.tolist()))))
-        self.fitness = rn
+def validar_coordenada(punto):
+    return barrios_caba.contains(punto).any()
 
 
-class Poblacion:
-    def __init__(self):
-        self.individuos = None
+def crear_coordenadas(q_coordenadas):
+    puntos = []
+    for i in range(0, q_coordenadas):
+        x_min, y_min, x_max, y_max = barrios_caba.total_bounds
+        while True:
+            x = np.random.uniform(x_min, x_max)
+            y = np.random.uniform(y_min, y_max)
+            point = Point(x, y)
+            if validar_coordenada(point):
+                puntos.append(point)
+                break
+    return puntos
 
-    def crear_individuos(self, q_individuos, q_coordenadas):
-        individuos = []
-        for i in range(0, q_individuos):
-            ind = Individuo()
-            ind.crear_coordenadas(q_coordenadas)
-            ind.calcular_nni()
-            individuos.append(ind)
-        self.individuos = pd.Series(individuos)
+
+def calcular_nni(coordenadas):
+    coord_radianes = copy.deepcopy(coordenadas)
+    coord_radianes = coord_radianes.apply(lambda c: (np.radians(c.x), np.radians(c.y)))
+    nbrs = NearestNeighbors(n_neighbors=2, metric='haversine').fit(coord_radianes.tolist())
+    distances, indices = nbrs.kneighbors(coord_radianes.tolist())
+    distances = distances * 6371000 / 1000
+    result = distances[:, 1]
+    dobs = np.sum(result) / len(coord_radianes.tolist())
+    rn = dobs / (0.5 * np.sqrt((area / len(coord_radianes.tolist()))))
+    return rn
+
+
+def crear_individuos(q_individuos, q_coordenadas):
+    individuos = []
+    for i in range(0, q_individuos):
+        individuos.append(crear_coordenadas(q_coordenadas))
+    return individuos
 
 
 class AlgoritmoGenetico:
@@ -75,34 +64,40 @@ class AlgoritmoGenetico:
         self.sigma = 1
         self.poblacion = None
         self.tipo_modelo = 'e'
-        self.k_seleccion = 0
+        self.k_seleccion = 2
 
     def inicio_ga(self, tipo_modelo):
-        self.poblacion = Poblacion()
-        self.poblacion.crear_individuos(self.q_individuos, self.q_coordenadas)
+        self.poblacion = pd.DataFrame(crear_individuos(10, 50))
+        self.poblacion['nni'] = self.poblacion.apply(calcular_nni, axis=1)
 
         if tipo_modelo == 'g':
             copia = self.seleccion_generacional()
 
         else:
-            #for gen in range(0, self.nro_generaciones):
-            self.k_seleccion = int(len(self.poblacion.individuos)/2)
-            # estacionario con, por ahora, selección ruleta
-            offspring = self.seleccion_ruleta(self.k_seleccion)
+            copia_poblacion = copy.deepcopy(self.poblacion)
+            for gen in range(0, self.nro_generaciones):
+                # estacionario con, por ahora, selección ruleta
+                offspring = self.seleccion_ruleta(self.k_seleccion)
 
-            for i in range(1, len(offspring), 2):
-                if np.random.random() < self.prob_cruza:
-                    offspring[i-1], offspring[i] = self.cruzamiento(offspring[i-1], offspring[i])
+                for i in range(1, len(offspring), 2):
+                    if np.random.random() < self.prob_cruza:
+                        offspring[i-1], offspring[i] = self.cruzamiento(offspring[i-1], offspring[i])
 
-            for i in range(len(offspring)):
-                if np.random.random() < self.prob_mut:
-                    offspring[i] = self.mutacion(offspring[i], self.mu, self.sigma, self.prob_mut_alelo)
+                for i in range(len(offspring)):
+                    if np.random.random() < self.prob_mut:
+                        offspring[i] = self.mutacion(offspring[i], self.mu, self.sigma, self.prob_mut_alelo)
 
-            for ind in offspring:
-                ind.calcular_nni()
-                print(ind.fitness)
-            #return
+                # paso al offspring a df
+                offspring_df = pd.DataFrame(offspring)
+                offspring_df['nni'] = offspring_df.apply(calcular_nni, axis=1)
 
+                # elimino al peor de la población inicial y lo reemplazo por el nuevo mejor
+                print('Peor \n'+str(copia_poblacion['nni'].idxmin()))
+                copia_poblacion = copia_poblacion.drop(copia_poblacion['nni'].idxmin())
+                copia_poblacion = copia_poblacion.append(offspring_df.iloc[offspring_df['nni'].idxmax()],
+                                                         ignore_index=True)
+                print(copia_poblacion)
+            return copia_poblacion
 
     # modelo generacional.
     def seleccion_generacional(self):
@@ -111,18 +106,14 @@ class AlgoritmoGenetico:
 
     # modelo estacionario
     def seleccion_ruleta(self, k):
-        copy_ind = copy.deepcopy(self.poblacion.individuos)
-        sum_fit = sum(getattr(ind, 'fitness') for ind in copy_ind)
-
+        copy_pob = copy.deepcopy(self.poblacion)
+        sum_fit = copy_pob['nni'].sum()
+        copy_pob['cum_sum'] = copy_pob['nni'].cumsum()
         chosen = []
         for i in range(k):
             u = np.random.random() * sum_fit
-            sum_ = 0
-            for ind in copy_ind:
-                sum_ += getattr(ind, 'fitness')
-                if sum_> u:
-                    chosen.append(ind)
-                    break
+            s = copy_pob[copy_pob.cum_sum > u].head(1).iloc[:, :50]
+            chosen.append(s.values[0])
         return chosen
 
     # http: // sedici.unlp.edu.ar / bitstream / handle / 10915 / 4060 / III_ - _Algoritmos_evolutivos.pdf?sequence = 7 & isAllowed = y
@@ -138,12 +129,12 @@ class AlgoritmoGenetico:
         return chosen
 
     def cruzamiento(self, ind1, ind2):
-        tam = min(len(ind1.coordenadas), len(ind2.coordenadas))
+        tam = min(len(ind1), len(ind2))
         pto_cruce = np.random.randint(1, tam-1)
 
         ind1_copia = copy.deepcopy(ind1)
-        ind1.coordenadas[pto_cruce:], ind2.coordenadas[pto_cruce:] = ind2.coordenadas[pto_cruce:], \
-                                                                     ind1_copia.coordenadas[pto_cruce:]
+
+        ind1[pto_cruce:], ind2[pto_cruce:] = ind2[pto_cruce:], ind1_copia[pto_cruce:]
 
         del ind1_copia
         return ind1, ind2
@@ -154,21 +145,23 @@ class AlgoritmoGenetico:
         estándar de sigma como input del individuo'''
 
         # repito mu tantas coordenadas tenga el individuo
-        mu = repeat(mu, len(ind1.coordenadas))
+        mu = repeat(mu, len(ind1))
         # repito sigma tantas coordenadas tenga el individuo
-        sigma = repeat(sigma, len(ind1.coordenadas))
+        sigma = repeat(sigma, len(ind1))
 
-        for i, m, s in zip(range(len(ind1.coordenadas)), mu, sigma):
+        for i, m, s in zip(range(len(ind1)), mu, sigma):
             if random.random() < prob:
                 while True:
-                    punto_mutado = Point(ind1.coordenadas[i].x + random.gauss(m, s),
-                                         ind1.coordenadas[i].y + random.gauss(m, s))
+                    punto_mutado = Point(ind1[i].x + random.gauss(m, s),
+                                         ind1[i].y + random.gauss(m, s))
 
-                    if ind1.validar_coordenada(punto_mutado):
-                        ind1.coordenadas = ind1.coordenadas.drop([i])
-                        ind1.coordenadas.loc[i] = punto_mutado
+                    if validar_coordenada(punto_mutado):
+                        ind1 = np.delete(ind1, [i])
+                        ind1 = np.insert(ind1, [i], [punto_mutado])
                         break
         return ind1
+
+
 
 ga = AlgoritmoGenetico()
 ga.inicio_ga('e')
