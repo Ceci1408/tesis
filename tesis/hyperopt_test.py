@@ -5,8 +5,7 @@ from sklearn.neighbors import NearestNeighbors
 import numpy as np
 from shapely.geometry import Point
 import random
-from sqlalchemy import create_engine, Table, Column, Integer, MetaData, Float, UniqueConstraint, DateTime, sql, func, \
-    String
+from sqlalchemy import create_engine, Table, Column, Integer, MetaData, Float, UniqueConstraint, DateTime, sql, func
 from geoalchemy2 import Geometry, WKTElement
 from itertools import repeat
 from datetime import datetime
@@ -14,17 +13,16 @@ from datetime import datetime
 from hyperopt import fmin, tpe, hp, Trials
 from collections import OrderedDict
 
-#
-# SPACE = OrderedDict([
-#     ('q_individuos', hp.randint('q_individuos', range(30, 40, 1))),
-#     ('q_coordenadas', hp.randint('q_coordenadas', range(50, 60, 1))),
-#     ('prob_cruza', hp.uniform('prob_cruza', 0, 0.1)),
-#     ('prob_mut', hp.uniform('prob_mut', 0, 0.1)),
-#     ('prob_mut_alelo', hp.uniform('prob_mut_alelo', 0, 0.1)),
-#     ('mu', hp.uniform('mu', 0, 0.1)),
-#     ('sigma', hp.uniform('sigma', 0, 0.1))
-#                     ])
-#
+SPACE = OrderedDict([
+    ('q_individuos', 30+hp.randint('q_individuos', 40)),
+    ('q_coordenadas', 50+hp.randint('q_coordenadas', 100)),
+    ('prob_cruza', hp.uniform('prob_cruza', 0, 0.5)),
+    ('prob_mut', hp.uniform('prob_mut', 0, 0.05)),
+    ('prob_mut_alelo', hp.uniform('prob_mut_alelo', 0, 0.05)),
+    ('mu', hp.uniform('mu', 0, 1)),
+    ('sigma', hp.uniform('sigma', 0, 1))
+                    ])
+
 
 '''
     Carga y variables del mapa
@@ -37,19 +35,19 @@ area = barrios_caba['area'].sum()
 '''
     Variables para el algoritmo genético
 '''
-q_individuos = 200
-q_coordenadas = 100
-nro_generaciones = 20
-prob_cruza = 0.65
-prob_mut = 0.0361019610035419
-prob_mut_alelo = 0.019519136963946384
-mu = 0
-sigma = 1
-poblacion = None
-fecha = datetime.now()
-tipo_modelo = 'e'
-# Originalmente, en la descripción de Holland, deberían ser dos los padres no más a seleccionar
-k_seleccion = 2
+# q_individuos = 10
+# q_coordenadas = 100
+# nro_generaciones = 20
+# prob_cruza = 0.4
+# prob_mut = 0.025
+# prob_mut_alelo = 0.02
+# mu = 0
+# sigma = 1
+# poblacion = None
+# fecha = datetime.now()
+# tipo_modelo = 'e'
+# # Originalmente, en la descripción de Holland, deberían ser dos los padres no más a seleccionar
+# k_seleccion = 2
 
 
 '''
@@ -69,7 +67,6 @@ configuracion = Table('ag_configuracion', metadata,
                       Column('sigma', Float),
                       Column('fecha', DateTime),
                       Column('id_ejecucion', Integer, primary_key=True, autoincrement=True),
-                      Column('seleccion', String),
                       extend_existing=True)
 individuo = Table('individuo', metadata,
                   Column('id_ejecucion', Integer),
@@ -123,91 +120,76 @@ def crear_individuos(q_individuos, q_coordenadas):
     return individuos
 
 
-def inicio_ga():
+def inicio_ga(args):
     # q_individuos, q_coordenadas, prob_cruza, prob_mut, prob_mut_alelo, mu, sigma = args
 
-    # q_individuos = int(args.get('q_individuos'))
-    # q_coordenadas = int(args.get('q_coordenadas'))
-    # prob_cruza = args.get('prob_cruza')
-    # prob_mut = args.get('prob_mut')
-    # prob_mut_alelo = args.get('prob_mut_alelo')
-    # mu = args.get('mu')
-    # sigma = args.get('sigma')
+    q_individuos = int(args.get('q_individuos'))
+    q_coordenadas = int(args.get('q_coordenadas'))
+    prob_cruza = args.get('prob_cruza')
+    prob_mut = args.get('prob_mut')
+    prob_mut_alelo = args.get('prob_mut_alelo')
+    mu = args.get('mu')
+    sigma = args.get('sigma')
 
-    with engine.connect() as conn:
-        ins = configuracion.insert().values(q_individuos=q_individuos, q_coordenadas=q_coordenadas,
-                                            prob_cruza=prob_cruza, prob_mutacion=prob_mut, prob_mut_alelo=prob_mut_alelo,
-                                            mu=mu, sigma=sigma, fecha=fecha, seleccion="ruleta")
-        conn.execute(ins)
+    max_id_ejecucion = 1
 
-        sel = sql.select([func.max(configuracion.c.id_ejecucion)])
-        max_id_ejecucion = conn.execute(sel).fetchone()[0]
+    poblacion = pd.DataFrame(crear_individuos(q_individuos, q_coordenadas))
+    poblacion['nni'] = poblacion.apply(calcular_nni, axis=1)
 
-        poblacion = pd.DataFrame(crear_individuos(q_individuos, q_coordenadas))
-        poblacion['nni'] = poblacion.apply(calcular_nni, axis=1)
 
-        copia_poblacion = copy.deepcopy(poblacion)
-        nro_gen = 0
-        nni_max = 0
-        while nni_max <= 2.15:
-            k_seleccion = len(poblacion)
+    copia_poblacion = copy.deepcopy(poblacion)
 
-            offspring = seleccion_ruleta(k_seleccion, copia_poblacion, q_coordenadas)
-            #offspring = seleccion_torneo(3, copia_poblacion, k_seleccion)
-            # Offspring es mi "Mating Buffer".
+    k_seleccion = len(poblacion)
 
-            #Cruza
-            offspring['random_cruza'] = np.random.random(offspring.shape[0])
-            offspring_inter = offspring[offspring['random_cruza'] < prob_cruza].iloc[:, :q_coordenadas]
-            offspring = offspring.drop(offspring[offspring['random_cruza'] < prob_cruza].index)
-            offspring = offspring.iloc[:, :q_coordenadas]
-            offspring_inter = offspring_inter.reset_index(drop=True)
+    #offspring = seleccion_ruleta(k_seleccion, copia_poblacion)
+    offspring = seleccion_torneo(3, copia_poblacion, k_seleccion)
+    # Offspring es mi "Mating Buffer".
 
-            for i in range(1, len(offspring_inter), 2):
-                offspring_inter.iloc[i-1, :q_coordenadas], offspring_inter.iloc[i, :q_coordenadas] = cruzamiento(offspring_inter.iloc[i-1, :q_coordenadas], offspring_inter.iloc[i, :q_coordenadas])
+    #Cruza
+    offspring['random_cruza'] = np.random.random(offspring.shape[0])
+    offspring_inter = offspring[offspring['random_cruza'] < prob_cruza].iloc[:, :q_coordenadas]
+    offspring = offspring.drop(offspring[offspring['random_cruza'] < prob_cruza].index)
+    offspring = offspring.iloc[:, :q_coordenadas]
+    offspring_inter = offspring_inter.reset_index(drop=True)
 
-            offspring = offspring.append(offspring_inter, ignore_index=True, verify_integrity=True)
-            del offspring_inter
+    for i in range(1, len(offspring_inter), 2):
+        offspring_inter.iloc[i-1, :q_coordenadas], offspring_inter.iloc[i, :q_coordenadas] = cruzamiento(offspring_inter.iloc[i-1, :q_coordenadas], offspring_inter.iloc[i, :q_coordenadas])
 
-            # Mutación:
-            offspring['random_mutacion'] = np.random.random(offspring.shape[0])
-            offspring_inter = offspring[offspring['random_mutacion'] < prob_mut].iloc[:, :q_coordenadas].apply(mutacion, axis=1, args= (mu, sigma, prob_mut_alelo,))
-            offspring = offspring.drop(offspring[offspring['random_mutacion'] < prob_mut].index).iloc[:, :q_coordenadas]
-            offspring = offspring.append(offspring_inter, ignore_index=True, verify_integrity=True)
-            del offspring_inter
+    offspring = offspring.append(offspring_inter, ignore_index=True, verify_integrity=True)
+    del offspring_inter
 
-            # calculo nuevamente el nni
-            offspring['nni'] = offspring.apply(calcular_nni, axis=1)
+    # Mutación:
+    offspring['random_mutacion'] = np.random.random(offspring.shape[0])
+    offspring_inter = offspring[offspring['random_mutacion'] < prob_mut].iloc[:, :q_coordenadas].apply(mutacion, axis=1, args= (mu, sigma, prob_mut_alelo,))
+    offspring = offspring.drop(offspring[offspring['random_mutacion'] < prob_mut].index).iloc[:, :q_coordenadas]
+    offspring = offspring.append(offspring_inter, ignore_index=True, verify_integrity=True)
+    del offspring_inter
 
-            # reemplazo la poblacion entera
-            copia_poblacion = offspring
-            copia_poblacion['gen'] = nro_gen
-            copia_poblacion['id_ejecucion'] = max_id_ejecucion
-            copia_poblacion[['id_ejecucion', 'gen', 'nni']].to_sql('individuo', engine, if_exists='append', index_label=('ind'))
-            copia_poblacion.apply(save_puntos, axis=1, args=(max_id_ejecucion, q_coordenadas))
+    # calculo nuevamente el nni
+    offspring['nni'] = offspring.apply(calcular_nni, axis=1)
 
-            nni_max = copia_poblacion['nni'].max()
-            print('Generación : {}\n NNI Max: {} '.format(nro_gen, nni_max))
+    # reemplazo la poblacion entera
+    copia_poblacion = offspring
+    copia_poblacion['id_ejecucion'] = max_id_ejecucion
+    #copia_poblacion[['id_ejecucion', 'gen', 'nni']].to_sql('individuo', engine, if_exists='append', index_label=('ind'))
+    #copia_poblacion.apply(save_puntos, axis=1, args=(max_id_ejecucion,))
 
-            nro_gen += 1
-
-        return copia_poblacion
-
-# modelo estacionario
+    nni_max = copia_poblacion['nni'].max()
+    print('NNI Max: {} '.format(nni_max))
+    print('Individuos: {} - Coordenadas: {} - Prob Cruza: {} - Prob Mut: {} - Prob mut alelo: {} - Mu: {} - Sigma: {}'.
+          format(q_individuos, q_coordenadas, prob_cruza, prob_mut, prob_mut_alelo, mu, sigma))
+    return -nni_max
 
 
 def seleccion_ruleta(k, copia_poblacion, q_coordenadas):
     chosen_df = pd.DataFrame()
 
     sum_fit = copia_poblacion['nni'].sum()
-    copia_poblacion = copia_poblacion.sort_values(by=['nni'], ascending=False)
     copia_poblacion['cum_sum'] = copia_poblacion['nni'].cumsum()
-    for i in range(0, k):
-        #copia_poblacion['random'] = np.random.random(copia_poblacion.shape[0])
-        random_num = random.random()
-        #copia_poblacion['random'] = copia_poblacion['random']*sum_fit
-        copia_poblacion['randomxsum_fit'] = random_num * sum_fit
-        chosen = copia_poblacion[copia_poblacion.cum_sum > copia_poblacion.randomxsum_fit].head(1).iloc[:, :q_coordenadas]
+    for i in range(k):
+        copia_poblacion['random'] = np.random.random(copia_poblacion.shape[0])
+        copia_poblacion['random'] = copia_poblacion['random']*sum_fit
+        chosen = copia_poblacion[copia_poblacion.cum_sum > copia_poblacion.random].head(1).iloc[:, :q_coordenadas]
         chosen_df = chosen_df.append(chosen, ignore_index=True)
     return chosen_df
 
@@ -266,8 +248,8 @@ def save_puntos(serie, id_ejecucion, q_coordenadas):
     df_temp.to_sql('coordenadas', engine, if_exists='append', index=False, dtype={'punto': Geometry('POINT', srid=4326)})
 
 
-inicio_ga()
-# best = fmin(inicio_ga, space=SPACE, max_evals=10, trials=Trials(), rstate=None, show_progressbar=True, algo=tpe.suggest)
-# print(best)
-# print(hp.space_eval(SPACE, best))
-# #inicio_ga('g')
+#inicio_ga()
+best = fmin(inicio_ga, space=SPACE, max_evals=300, trials=Trials(), rstate=None, show_progressbar=True, algo=tpe.suggest)
+print(best)
+print(hp.space_eval(SPACE, best))
+#inicio_ga('g')
