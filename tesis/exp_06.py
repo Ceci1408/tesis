@@ -1,5 +1,6 @@
 """
-    En este experimento, se hace selección elitista y ruleta
+    En este experimento, se hace selección elitista y torneo
+    De 200 individuos, se toma el 5% como la elite, redondeado para arriba
 """
 
 import geopandas as gpd
@@ -13,10 +14,12 @@ from itertools import repeat
 from datetime import datetime
 import csv
 import time
+from math import ceil
 
 '''
     Carga y variables del mapa
 '''
+#barrios_caba = gpd.read_file('/home/cecilia/Dropbox/Tesis/Puntos Verdes/barrios.csv')
 barrios_caba = gpd.read_file('barrios.csv')
 barrios_caba.crs = {'init': 'EPSG:4326'}
 barrios_caba['area'] = np.around(barrios_caba['area'].astype(float) / 10 ** 6, decimals=3)  # paso a km2
@@ -38,6 +41,7 @@ tipo_modelo = 'e'
 # Originalmente, en la descripción de Holland, deberían ser dos los padres no más a seleccionar
 k_seleccion = 2
 torneo = 3
+q_elitistas = ceil(5*(q_individuos/100))
 
 
 '''
@@ -48,8 +52,8 @@ torneo = 3
         1: torneo
         3: elitista
 '''
-NRO_EXP = "04"
-SELECCION ="30" # elitista combinado con ruleta
+NRO_EXP = "06"
+SELECCION ="31" # elitista combinado con torneo
 
 
 def validar_coordenada(punto):
@@ -95,7 +99,7 @@ def inicio_ga():
     with open('configuracion_{}{}.csv'.format(NRO_EXP, SELECCION), 'w', newline='') as csv_configuracion:
         spamwriter = csv.writer(csv_configuracion)
         spamwriter.writerow([q_individuos, q_coordenadas, prob_cruza, prob_mut, prob_mut_alelo, mu, sigma,
-                            fecha, max_id_ejecucion, 'elitista_ruleta'])
+                            fecha, max_id_ejecucion, 'elitista_torneo'])
 
     poblacion = pd.DataFrame(crear_individuos(q_individuos, q_coordenadas))
     poblacion['nni'] = poblacion.apply(calcular_nni, axis=1)
@@ -106,8 +110,8 @@ def inicio_ga():
 
     # Comienzo del Algoritmo Genético
     while nni_max <= 2.15:
-        mejor, offspring = seleccion_elitista(copia_poblacion)
-        offspring = seleccion_ruleta(q_individuos-1, offspring, q_coordenadas)
+        mejores, offspring = seleccion_elitista(copia_poblacion)
+        offspring = seleccion_torneo(torneo, offspring, q_individuos-1)
 
         #Cruza
         offspring['random_cruza'] = np.random.random(offspring.shape[0])
@@ -124,8 +128,10 @@ def inicio_ga():
 
         # Mutación:
         offspring['random_mutacion'] = np.random.random(offspring.shape[0])
-        offspring_inter = offspring[offspring['random_mutacion'] < prob_mut].iloc[:, :q_coordenadas].apply(mutacion, axis=1, args= (mu, sigma, prob_mut_alelo,))
+        offspring_inter = offspring[offspring['random_mutacion'] < prob_mut].iloc[:, :q_coordenadas]
+        offspring_inter = offspring_inter.apply(mutacion, axis=1, args= (mu, sigma, prob_mut_alelo,))
         offspring = offspring.drop(offspring[offspring['random_mutacion'] < prob_mut].index).iloc[:, :q_coordenadas]
+        offspring_inter = offspring_inter.reset_index(drop=True)
         offspring = offspring.append(offspring_inter, ignore_index=True, verify_integrity=True)
         del offspring_inter
 
@@ -134,7 +140,7 @@ def inicio_ga():
 
         # reemplazo la poblacion entera
         copia_poblacion = offspring
-        copia_poblacion = copia_poblacion.append(mejor, ignore_index=True)
+        copia_poblacion = copia_poblacion.append(mejores, ignore_index=True, sort=False)
 
         copia_poblacion['gen'] = nro_gen
         copia_poblacion['id_ejecucion'] = max_id_ejecucion
@@ -176,9 +182,9 @@ def seleccion_torneo(tam_torneo, copia_poblacion, k):
 
 
 def seleccion_elitista(copia_poblacion):
-    mejor = copia_poblacion.iloc[copia_poblacion['nni'].idxmax()]
-    offspring = copia_poblacion.drop(copia_poblacion['nni'].idxmax())
-    return mejor, offspring
+    copia_poblacion = copia_poblacion.sort_values(by='nni', ascending=False)
+    mejores, offspring = copia_poblacion.head(q_elitistas), copia_poblacion.tail(len(copia_poblacion) - q_elitistas)
+    return mejores, offspring
 
 
 def cruzamiento(ind1, ind2):

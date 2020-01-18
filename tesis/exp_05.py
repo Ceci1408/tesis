@@ -48,7 +48,7 @@ torneo = 3
         1: torneo
         3: elitista
 '''
-NRO_EXP = "03"
+NRO_EXP = "05"
 SELECCION ="31" # elitista combinado con torneo
 
 
