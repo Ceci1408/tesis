@@ -26,7 +26,7 @@ todo_junto = unary_union(poligonos)
 '''
     Variables para el algoritmo.
 '''
-Q_IND = 25# 200
+Q_IND = 100# 200
 Q_COORD = 100
 MUT_PROB = 0.01
 CROSS_PROB = 0.5
@@ -210,9 +210,9 @@ def main():
             puntos_df['gen'] = g
             dataframe = dataframe.append(puntos_df, ignore_index=True)
             i += 1
-        dataframe.to_csv('puntos_torneos_20200606.csv', mode='a', header=False, index=False)
+        dataframe.to_csv('puntos_torneos_{}.csv'.format(datetime.strftime(datetime.now(), '%Y%m%d')), mode='a', header=False, index=False)
 
-    pickle_file = 'pickle_file_stats_torneo_20200606'
+    pickle_file = 'pickle_file_stats_torneo_{}'.format(datetime.strftime(datetime.now(), '%Y%m%d'))
     outfile = open(pickle_file, 'wb')
     pickle.dump(logbook, outfile)
     outfile.close()
