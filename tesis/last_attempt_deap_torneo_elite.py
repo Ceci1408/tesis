@@ -22,19 +22,27 @@ area = barrios_caba['area_km'].sum()
 
 poligonos = [p for p in barrios_caba.geometry]
 todo_junto = unary_union(poligonos)
-todo_junto.area
 
 
 '''
     Variables para el algoritmo.
-'''
-Q_IND = 25# 200
+    Q_IND = 25# 200
 Q_COORD = 100
 MUT_PROB = 0.3
 CROSS_PROB = 0.9
 MUT_ALELO_PROB = 0.3
 TORNEO_TAM = 3
+'''
 
+Q_IND = 100# 200
+Q_COORD = 100
+MUT_PROB = 0.3
+CROSS_PROB = 0.5
+MUT_ALELO_PROB = 0.3
+TORNEO_TAM = 3
+MU = 0
+SIGMA = 1
+ELITE = 0.1
 
 def evalOneMax(individual):
     df = pd.Series(individual)
@@ -130,9 +138,9 @@ toolbox.register("coordenada", crear_coordenadas)
 toolbox.register("individuo", tools.initRepeat, creator.Individuo, toolbox.coordenada, n=Q_COORD)
 toolbox.register("poblacion", tools.initRepeat, list, toolbox.individuo)
 toolbox.register("mate", cxBlend_custom)
-toolbox.register("mutate", mutGaussian_custom, indpb=0.05)
+toolbox.register("mutate", mutGaussian_custom, indpb=MUT_ALELO_PROB)
 #toolbox.register("select", tools.selTournament, tournsize=TORNEO_TAM)
-toolbox.register("select", selElitistAndTournament, k_elite=int(0.1*Q_IND), k_tournament=Q_IND-int(0.1*Q_IND), tournsize=3)
+toolbox.register("select", selElitistAndTournament, k_elite=int(ELITE*Q_IND), k_tournament=Q_IND-int(ELITE*Q_IND), tournsize=3)
 toolbox.register("evaluate", evalOneMax)
 toolbox.register("map", futures.map)
 
@@ -182,7 +190,7 @@ def main():
 
         for mutant in offspring:
             if random.random() < MUT_PROB:
-                toolbox.mutate(mutant, 0, 0.0090)
+                toolbox.mutate(mutant, MU, SIGMA)
                 del mutant.fitness.values
 
         # Evaluate the individuals with an invalid fitness
