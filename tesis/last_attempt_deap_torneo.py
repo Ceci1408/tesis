@@ -28,9 +28,9 @@ todo_junto = unary_union(poligonos)
 '''
 Q_IND = 100# 200
 Q_COORD = 100
-MUT_PROB = 0.01
+MUT_PROB = 0.3
 CROSS_PROB = 0.5
-MUT_ALELO_PROB = 0.01
+MUT_ALELO_PROB = 0.3
 TORNEO_TAM = 3
 MU = 0
 SIGMA = 1
