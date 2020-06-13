@@ -26,14 +26,15 @@ todo_junto = unary_union(poligonos)
 '''
     Variables para el algoritmo.
 '''
+random.seed(128)
 Q_IND = 25# 200
 Q_COORD = 100
-MUT_PROB = 0.03
+MUT_PROB = 0.3
 CROSS_PROB = 0.6
-MUT_ALELO_PROB = 0.03
+MUT_ALELO_PROB = 0.3
 TORNEO_TAM = 3
 MU = 0
-SIGMA = 1
+SIGMA = 0.002
 '''
 Q_IND = 25# 200
 Q_COORD = 100
@@ -152,7 +153,7 @@ logbook = tools.Logbook()
 
 def main():
     global MUT_PROB, MUT_ALELO_PROB
-    random.seed(128)
+
     pop = toolbox.poblacion(n=Q_IND)
 
     fitnesses = list(map(toolbox.evaluate, pop))
@@ -165,7 +166,7 @@ def main():
     g = 0
 
     # Begin the evolution
-    while max(fits) < 2.15:
+    while max(fits) < 2.15 or g==6300:
         # A new generation
         g = g + 1
         print("-- Generation %i --" % g)
@@ -206,16 +207,19 @@ def main():
         if MUT_PROB < 1:
             if record.get('std', 0) < 0.01:
                 print('Pm antes: {}'.format(MUT_PROB))
-                MUT_PROB = MUT_PROB+(MUT_PROB*0.1)
-                MUT_ALELO_PROB = MUT_ALELO_PROB+(MUT_ALELO_PROB*0.1)
+                MUT_PROB = MUT_PROB + (MUT_PROB * 0.1)
+                MUT_ALELO_PROB = MUT_ALELO_PROB + (MUT_ALELO_PROB * 0.1)
                 print('Pm después: {}'.format(MUT_PROB))
-            if record.get('std', 0) > 0.06:
+
+            if record.get('std', 0) > 1:
                 print('Pm antes: {}'.format(MUT_PROB))
-                MUT_PROB = MUT_PROB-(MUT_PROB*0.1)
+                MUT_PROB = MUT_PROB - (MUT_PROB * 0.1)
                 MUT_ALELO_PROB = MUT_ALELO_PROB - (MUT_ALELO_PROB * 0.1)
                 print('Pm después: {}'.format(MUT_PROB))
         else:
-            MUT_PROB = 0.03
+            MUT_PROB = MUT_PROB - (MUT_PROB * 0.1)
+            MUT_ALELO_PROB = MUT_ALELO_PROB - (MUT_ALELO_PROB * 0.1)
+
         i = 0
         dataframe = pd.DataFrame()
         for ind in pop:
@@ -224,9 +228,9 @@ def main():
             puntos_df['gen'] = g
             dataframe = dataframe.append(puntos_df, ignore_index=True)
             i += 1
-        dataframe.to_csv('puntos_torneos_25_3.csv', mode='a', header=False, index=False)
+        dataframe.to_csv('puntos_torneos_25_4.csv', mode='a', header=False, index=False)
 
-    pickle_file = 'pickle_file_stats_torneo_25_3'
+    pickle_file = 'pickle_file_stats_torneo_25_4'
     outfile = open(pickle_file, 'wb')
     pickle.dump(logbook, outfile)
     outfile.close()
