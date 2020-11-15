@@ -189,16 +189,17 @@ def get_fitness(conn):
     (
         select rank() over(order by ga_config_id) as expe_id,
         tipo_seleccion ,
-        ga_config_id 
+        ga_config_id ,
+        alpha
         from ga_config gc 
         where flg_valido =1 and ga_config_id >=61
     )
-    select e.expe_id, e.tipo_seleccion, iv.fitness 
+    select e.expe_id, e.tipo_seleccion, e.alpha,  iv.fitness 
     from experimentos as e
     inner join individuos_validos as iv
     on e.ga_config_id = iv.ga_config_id 
     """
-    columns =['expe_id', 'tipo_seleccion', 'fitness']
+    columns =['expe_id', 'tipo_seleccion', 'alpha', 'fitness']
 
     cursor = conn.cursor()
     cursor.execute(sql)
@@ -215,23 +216,23 @@ def get_duracion(conn):
         select ga_config_id , avg(fitness)
         from individuos_validos iv 
         where ga_config_id >=61
-        group by ga_config_id 
+        group by ga_config_id order by ga_config_id
     )
     select 
-        rank() OVER(order by gc.ga_config_id),
-        tipo_seleccion  , 
-        fecha_hora_comienzo , 
-        fecha_hora_fin ,
-        alpha,
-        extract(epoch from age(fecha_hora_fin, fecha_hora_comienzo))/3600, 
+        gc.ga_config_id , rank() OVER(partition by alpha order by gc.ga_config_id),
+        gc.tipo_seleccion  , 
+        gc.fecha_hora_comienzo , 
+        gc.fecha_hora_fin ,
+        gc.alpha,
+        extract(epoch from age(gc.fecha_hora_fin, gc.fecha_hora_comienzo))/3600, 
         b.avg
     from ga_config as gc
     inner join avg_fit as b
         on gc.ga_config_id = b.ga_config_id
-    where flg_valido = 1 and gc.ga_config_id >=61;
+    where gc.flg_valido = 1 and gc.ga_config_id >=61 order by gc.ga_config_id ;
     """
 
-    columns = ['expe_id','tipo_seleccion','fecha_hora_comienzo', 'fecha_hora_fin', 'alpha','duracion', 'fitness_avg']
+    columns = ['expe_id', 'expe_nro','tipo_seleccion','fecha_hora_comienzo', 'fecha_hora_fin', 'alpha','duracion', 'fitness_avg']
 
     cursor = conn.cursor()
     cursor.execute(sql)
@@ -243,26 +244,73 @@ def get_duracion(conn):
 
 def evolutivo_fitness(conn):
     sql = """
-     with expe_id as 
+       with expe_id as 
     (
-        select rank() over(order by ga_config_id) as expe_id, 
-        ga_config_id 
+        select rank() over(partition by alpha order by ga_config_id) as expe_id, 
+        ga_config_id, 
+        alpha,
+        tipo_seleccion
         from ga_config
         where flg_valido =1 and ga_config_id >= 61
     )
     select eid.expe_id, 
+    eid.alpha,
+    eid.tipo_seleccion ,
     generacion_nro ,
     fitness
-    
     from individuos_validos iv 
     inner join expe_id as eid
     on iv.ga_config_id = eid.ga_config_id
     order by expe_id desc
     """
-    columns = ['expe_id','generacion_nro', 'fitness']
+    columns = ['expe_nro','alpha', 'tipo_seleccion', 'generacion_nro', 'fitness']
 
     cursor = conn.cursor()
     cursor.execute(sql)
+    test = cursor.fetchall()
+    cursor.close()
+
+    return test, columns
+
+
+def mejor_resultado(conn):
+    generaciones = list()
+    for i in range(0, 3500+350, 350):
+        generaciones.append(i)
+
+    sql_1 = """
+    with
+    mejor_experimento as
+    (
+        select ga_config_id 
+        from individuos_validos iv 
+        where fitness = (select max(fitness) from individuos_validos iv3)
+        limit 1
+    ),
+    mejores_individuos as
+    (
+        select generacion_id , generacion_nro , individuo_id , fitness ,
+        row_number() over(partition by generacion_id, generacion_nro order by fitness desc) as ranking
+        from individuos_validos iv
+        where ga_config_id = (select ga_config_id from mejor_experimento) 
+    ),
+    puntos_mejores_diez as
+    (
+        select * 
+        from mejores_individuos 
+        where ranking =1 and generacion_nro in (%s)
+    )
+    select pv.punto_id, pv.punto_nro, pv.individuo_id, ST_AsText(pv.punto_coordenada) as punto_coordenada, 
+    pmd.fitness, pmd.generacion_nro
+    from puntos_validos as pv
+    inner join puntos_mejores_diez as pmd
+    on pv.individuo_id = pmd.individuo_id
+    """ % ', '.join(str(id) for id in generaciones)
+
+    columns = ['punto_id', 'punto_nro', 'individuo_id', 'punto_coordenada', 'fitness', 'generacion_nro']
+
+    cursor = conn.cursor()
+    cursor.execute(sql_1)
     test = cursor.fetchall()
     cursor.close()
 
