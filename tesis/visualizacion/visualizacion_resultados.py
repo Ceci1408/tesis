@@ -130,11 +130,11 @@ def create_gif():
 
 
 def generar_visualizaciones(conn):
-    #visualizacion_mapa(conn)
-    #crear_html_png()
+    visualizacion_mapa(conn)
+    crear_html_png()
     create_gif()
-    #boxplot(conn)
-    #time(conn)
-    #fitness(conn)
-    #evolutivo_fitness(conn)
-    #promedio_fitness(conn)
+    boxplot(conn)
+    time(conn)
+    fitness(conn)
+    evolutivo_fitness(conn)
+    promedio_fitness(conn)

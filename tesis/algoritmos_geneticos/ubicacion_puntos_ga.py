@@ -1,7 +1,7 @@
 from deap import base, creator, tools
 import random
 from shapely.geometry import Point
-from shapely.ops import unary_union, nearest_points
+from shapely.ops import unary_union
 import pandas as pd
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
@@ -12,6 +12,8 @@ from itertools import repeat, count
 from tesis.conexion_bd import base_de_datos
 from tesis.visualizacion import visualizacion_resultados as vr
 import os
+
+poligono_caba=None
 
 
 def funcion_objetivo(individual, Q_COORD, area):
@@ -33,20 +35,21 @@ def validar_coordenada(punto, poligono_caba):
     return punto.within(poligono_caba)
 
 
-def crear_coordenadas(barrios_caba_gdf):
-    x_min, y_min, x_max, y_max = barrios_caba_gdf.total_bounds
+def crear_coordenadas(mapa='mapa', poligono='poligono'):
+    x_min, y_min, x_max, y_max = mapa.total_bounds
 
     while True:
         x = random.uniform(x_min, x_max)
         y = random.uniform(y_min, y_max)
         point = Point(x, y)
-        if validar_coordenada(point):
+        if validar_coordenada(point, poligono):
             break
     return point
 
 
 def validar_individuo(individual):
-    return all(validar_coordenada(punto) for punto in individual)
+    global poligono_caba
+    return all(validar_coordenada(punto, poligono_caba) for punto in individual)
 
 
 '''
@@ -114,7 +117,8 @@ def ejecucion_ga(conn, ga_params):
 
     toolbox = base.Toolbox()
 
-    toolbox.register("coordenada", crear_coordenadas)
+    toolbox.register("coordenada", crear_coordenadas, mapa=ga_params.get('barrios_caba_gdf'),
+                     poligono=ga_params.get('poligonos_caba'))
     toolbox.register("individuo", tools.initRepeat, creator.Individuo, toolbox.coordenada,
                      n=ga_params.get('q_coord'))
     toolbox.register("poblacion", tools.initRepeat, list, toolbox.individuo)
@@ -126,20 +130,21 @@ def ejecucion_ga(conn, ga_params):
     else:
         toolbox.register("select", tools.selTournament, tournsize=ga_params.get('torneo_tam'))
 
-    toolbox.register("evaluate", funcion_objetivo)
+    toolbox.register("evaluate", funcion_objetivo, Q_COORD = ga_params.get('q_coord'), area=ga_params.get('area'))
     toolbox.register("map", futures.map)
 
     toolbox.decorate("evaluate", tools.DeltaPenalty(validar_individuo, 0))
 
-    print('Ejecutando {}'.format(ga_params.get('tipo_seleccion')))
+    print('Ejecutando experimento {}'.format(ga_params.get('tipo_seleccion')))
 
+    '''
     config_id = base_de_datos.insert_config(conn, ga_params.get('q_ind'), ga_params.get('q_coord'),
                                             ga_params.get('mut_prob'), ga_params.get('cross_prob'),
                                             ga_params.get('mut_prob_alelo'), ga_params.get('tipo_seleccion'),
                                             ga_params.get('torneo_tam'), ga_params.get('mu_x'), ga_params.get('mu_y'),
                                             ga_params.get('sigma_x'), ga_params.get('sigma_y'),
                                             ga_params.get('generacion_parada'), ga_params.get('alpha'))
-
+    '''
     pop = toolbox.poblacion(n=ga_params.get('q_ind'))
 
     fitnesses = list(map(toolbox.evaluate, pop))
@@ -152,20 +157,21 @@ def ejecucion_ga(conn, ga_params):
     g = 0
     print('Generacion {} - Max Fit: {} Avg Fit {}'.format(g, max(fits), np.average(fits)))
 
-    generacion_id = base_de_datos.insert_generacion(conn, g, config_id)
+    # generacion_id = base_de_datos.insert_generacion(conn, g, config_id)
 
+    '''
     for i, ind in enumerate(pop):
         individuo_id = base_de_datos.insert_individuo(conn, i, generacion_id, ind.fitness.values[0])
         list_puntos = zip(count(start=1), repeat(individuo_id), [x.wkt for x in ind])
         base_de_datos.insert_punto(conn, list(list_puntos))
-
+    '''
     # Begin the evolution
-    while max(fits) < 2.15 and g < ga_params.get('generacion_parada'):
+    while max(fits) < 2.15 and g < 300:#ga_params.get('generacion_parada'):
         # A new generation
         g = g + 1
         print('Generacion {} - Max Fit: {} Avg Fit {}'.format(g, max(fits), np.average(fits)))
 
-        generacion_id = base_de_datos.insert_generacion(conn, g, config_id)
+        #generacion_id = base_de_datos.insert_generacion(conn, g, config_id)
 
         # Select the next generation individuals
         offspring = toolbox.select(pop, len(pop))
@@ -197,6 +203,7 @@ def ejecucion_ga(conn, ga_params):
         # Gather all the fitnesses in one list and print the stats
         fits = [ind.fitness.values[0] for ind in pop]
 
+        '''
         for i, ind in enumerate(pop):
             individuo_id = base_de_datos.insert_individuo(conn, i, generacion_id, ind.fitness.values[0])
 
@@ -205,7 +212,7 @@ def ejecucion_ga(conn, ga_params):
             base_de_datos.insert_punto(conn, list(list_puntos))
 
     base_de_datos.update_config(conn, config_id)
-
+    '''
     '''
         Termina la ejecución y limpieza de variables, clases y funciones
     '''
@@ -222,8 +229,8 @@ def main(conn):
     """
         Carga de variables
     """
-    os.chdir('..')
-    archivo_parametros = os.path.join(os.getcwd(), 'parametros_iniciales.csv')
+    #os.chdir('..')
+    archivo_parametros = os.path.join(os.getcwd(), 'archivo_parametros.csv')
 
     parametros_df = pd.read_csv(archivo_parametros, decimal=',')
 
@@ -241,6 +248,7 @@ def main(conn):
                                                 decimals=3)  # paso a km2
         area = barrios_caba_gdf['area_km'].iloc[0]
         poligonos_barrios = [p for p in barrios_caba_gdf.geometry]
+        global poligono_caba
         poligono_caba = unary_union(poligonos_barrios)
 
         random.seed(128)
@@ -262,7 +270,7 @@ def main(conn):
             mut_prob=float(fila.loc['mut_prob']),
             cross_prob=float(fila.loc['mut_cruce']),
             mut_prob_alelo=float(fila.loc['mut_prob_alelo']),
-            tipo_seleccion='Ruleta' if fila.loc['tipo_seleccion']==1 else 'Torneo',
+            tipo_seleccion=int(fila.loc['tipo_seleccion']),
             torneo_tam=int(fila.loc['torneo_tam']),
             mu_x =float(fila.loc['mu_x']),
             sigma_x=float(fila.loc['sigma_x']),
@@ -278,7 +286,6 @@ def main(conn):
 if __name__ == '__main__':
     conexion_bd = base_de_datos.connect()
     #main(conexion_bd)
-
     vr.generar_visualizaciones(conexion_bd)
 
     base_de_datos.close_connection(conexion_bd)
